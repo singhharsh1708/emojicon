@@ -30,6 +30,11 @@ function loadIcon(src) {
     return img
   }
   if (/[\/~]|\.(png|jpe?g|gif|icns|heic|webp|tiff?)$/i.test(src)) throw new Error('image not found: ' + src)
+  if (/^[a-z][a-z ]*$/i.test(src)) {
+    const hit = allEmoji().find(([, n]) => n === src.toLowerCase()) || search(src)[0]
+    if (!hit) throw new Error('no emoji named "' + src + '" (try: emojicon list ' + src + ')')
+    return render(hit[0])
+  }
   return render(src)
 }
 
@@ -52,7 +57,59 @@ function autoEmoji(path) {
   return null
 }
 
+// Every emoji in Apple Color Emoji, read from the system font, with its Unicode name.
+function allEmoji() {
+  const set = $.NSFont.fontWithNameSize('AppleColorEmoji', 12).coveredCharacterSet
+  const ranges = [[0x2190, 0x2BFF], [0x1F000, 0x1FAFF]]
+  const list = []
+  for (const [a, b] of ranges) for (let cp = a; cp <= b; cp++) {
+    if (!set.longCharacterIsMember(cp)) continue
+    const ch = String.fromCodePoint(cp)
+    const n = $(ch).stringByApplyingTransformReverse('Any-Name', false).js
+    const name = n.replace(/\\N\{|\}/g, '').toLowerCase()
+    if (/regional indicator|skin tone|tag /.test(name)) continue
+    const e = cp < 0x1F000 || cp === 0x1F004 ? ch + '\uFE0F' : ch
+    list.push([e, name])
+  }
+  return list
+}
+function search(word) {
+  const w = (word || '').toLowerCase().trim()
+  return allEmoji().filter(([, n]) => !w || n.split(' ').some(x => x.startsWith(w)) || (w.includes(' ') && n.includes(w)))
+}
+
+function pick(paths) {
+  const app = Application.currentApplication()
+  app.includeStandardAdditions = true
+  if (!paths.length) {
+    const f = app.chooseFolder({ withPrompt: 'Pick a folder to give a new icon:' })
+    paths = [f.toString()]
+  }
+  let matches
+  for (;;) {
+    const word = app.displayDialog('Search emoji (e.g. rocket, cat, fire). Leave empty to see all:',
+      { defaultAnswer: '', withTitle: 'emojicon', buttons: ['Cancel', 'Search'], defaultButton: 'Search' }).textReturned
+    matches = search(word)
+    if (matches.length) break
+    app.displayAlert('No emoji found for "' + word + '"')
+  }
+  const choice = app.chooseFromList(matches.map(([e, n]) => e + '  ' + n),
+    { withTitle: 'emojicon', withPrompt: matches.length + ' emoji. Pick one:' })
+  if (!choice) return 'cancelled'
+  const e = choice[0].split('  ')[0]
+  const out = paths.map(p => {
+    const ok = $.NSWorkspace.sharedWorkspace.setIconForFileOptions(render(e), $(p).stringByExpandingTildeInPath.js, 0)
+    return (ok ? '✓ ' + e : '✗ failed') + ' ' + p
+  })
+  return out.join('\n')
+}
+
 function run(argv) {
+  if (argv[0] === 'pick' || argv[0] === '--pick') return pick(argv.slice(1))
+  if (argv[0] === 'list' || argv[0] === '--list') {
+    const m = search(argv.slice(1).join(' '))
+    return m.map(([e, n]) => e + '  ' + n).join('\n') + '\n(' + m.length + ' emoji)'
+  }
   if (argv[0] === '--auto') {
     const fm = $.NSFileManager.defaultManager, out = []
     for (const p of argv.slice(1)) {
@@ -65,7 +122,7 @@ function run(argv) {
     }
     return out.join('\n')
   }
-  if (argv.length < 2) return 'usage: emojicon <emoji|image|url> <path>...\n       emojicon --auto <path>...\n       emojicon --reset <path>...'
+  if (argv.length < 2) return 'usage: emojicon pick [path...]          opens a picker\n       emojicon list [word]               search emoji\n       emojicon <emoji|name|image|url> <path>...\n       emojicon --auto <path>...\n       emojicon --reset <path>...'
   const [first, ...paths] = argv
   const icon = first === '--reset' ? $() : loadIcon(first)
   const fm = $.NSFileManager.defaultManager

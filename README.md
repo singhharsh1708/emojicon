@@ -4,7 +4,19 @@ Bored of the same blue folder icons? Me too.
 
 emojicon turns any emoji, image file or image URL into a macOS file or folder icon, or picks one for you based on the folder's name. One file, no dependencies, nothing to compile.
 
+## Easiest: the picker
+
 ```sh
+emojicon pick
+```
+
+Choose a folder, type a word like `rocket` or `cat`, then pick from the list. Every emoji in macOS (about 1,400) is searchable.
+
+## Everything else
+
+```sh
+emojicon rocket ~/Projects          # emoji by name
+emojicon list fire                  # search emoji names
 emojicon 🧪 ~/Desktop/Research
 emojicon 📸 ~/Desktop/Screenshots ~/Pictures
 emojicon ~/Downloads/spiderman.png ~/Projects   # any PNG/JPG/ICNS
