@@ -1,0 +1,80 @@
+#!/usr/bin/osascript -l JavaScript
+// emojicon: set any emoji as a macOS file or folder icon.
+// Usage: emojicon <emoji|image-file|image-url> <path>...   |   emojicon --reset <path>...
+ObjC.import('AppKit')
+
+function render(emoji) {
+  const size = 1024
+  const img = $.NSImage.alloc.initWithSize($.NSMakeSize(size, size))
+  img.lockFocus
+  const attrs = $.NSDictionary.dictionaryWithObjectForKey(
+    $.NSFont.systemFontOfSize(size * 0.8), $.NSFontAttributeName)
+  const str = $(emoji)
+  const b = str.sizeWithAttributes(attrs)
+  str.drawAtPointWithAttributes($.NSMakePoint((size - b.width) / 2, (size - b.height) / 2), attrs)
+  img.unlockFocus
+  return img
+}
+
+// Accept an image file path or an http(s) URL; otherwise treat the text as an emoji.
+function loadIcon(src) {
+  if (/^https?:\/\//.test(src)) {
+    const img = $.NSImage.alloc.initWithContentsOfURL($.NSURL.URLWithString(src))
+    if (img.isNil()) throw new Error('could not load image from ' + src)
+    return img
+  }
+  const path = $(src).stringByExpandingTildeInPath.js
+  if ($.NSFileManager.defaultManager.fileExistsAtPath(path)) {
+    const img = $.NSImage.alloc.initWithContentsOfFile(path)
+    if (img.isNil()) throw new Error('not an image: ' + src)
+    return img
+  }
+  if (/[\/~]|\.(png|jpe?g|gif|icns|heic|webp|tiff?)$/i.test(src)) throw new Error('image not found: ' + src)
+  return render(src)
+}
+
+// --auto: pick an emoji from words in the file or folder name.
+const AUTO = [
+  [/\b(screenshot|screen shot|capture)/, '📸'], [/\b(photo|picture|image|img|wallpaper)/, '🖼️'],
+  [/\b(video|movie|film|clip)/, '🎬'], [/\b(music|song|audio|podcast|sound)/, '🎵'],
+  [/\b(download)/, '📥'], [/\b(upload)/, '📤'], [/\b(document|docs?\b|paper|notes?\b)/, '📄'],
+  [/\b(sci|ml\b|research|lab|experiment|science)/, '🧪'], [/\b(ai\b|neural|brain|model|llm)/, '🧠'],
+  [/\b(chip|hardware|silicon|tenstorrent|gpu|cpu|metal)/, '🔲'], [/\b(code|dev|src|project|repo|git)/, '💻'],
+  [/\b(work|job|office|business)/, '💼'], [/\b(school|study|class|course|homework|uni)/, '🎓'],
+  [/\b(book|read|novel|manga|comic)/, '📚'], [/\b(game|gaming|steam)/, '🎮'], [/\b(design|art|figma|sketch)/, '🎨'],
+  [/\b(money|finance|tax|invoice|bank|bill|receipt)/, '💰'], [/\b(travel|trip|vacation|flight)/, '✈️'],
+  [/\b(backup|archive|old)/, '🗄️'], [/\b(personal|private|secret)/, '🔒'], [/\b(anime)/, '⚔️'],
+  [/\b(health|medical|fitness|gym)/, '💪'], [/\b(food|recipe|cook)/, '🍳'], [/\b(app|application)/, '📱'],
+]
+function autoEmoji(path) {
+  const name = $(path).lastPathComponent.js.toLowerCase().replace(/[_\-.]/g, ' ')
+  for (const [re, e] of AUTO) if (re.test(name)) return e
+  return null
+}
+
+function run(argv) {
+  if (argv[0] === '--auto') {
+    const fm = $.NSFileManager.defaultManager, out = []
+    for (const p of argv.slice(1)) {
+      const path = $(p).stringByExpandingTildeInPath.js
+      if (!fm.fileExistsAtPath(path)) { out.push('✗ not found: ' + p); continue }
+      const e = autoEmoji(path)
+      if (!e) { out.push('– no match, skipped: ' + p); continue }
+      const ok = $.NSWorkspace.sharedWorkspace.setIconForFileOptions(render(e), path, 0)
+      out.push((ok ? '✓ ' + e : '✗ failed') + ' ' + p)
+    }
+    return out.join('\n')
+  }
+  if (argv.length < 2) return 'usage: emojicon <emoji|image|url> <path>...\n       emojicon --auto <path>...\n       emojicon --reset <path>...'
+  const [first, ...paths] = argv
+  const icon = first === '--reset' ? $() : loadIcon(first)
+  const fm = $.NSFileManager.defaultManager
+  const out = []
+  for (const p of paths) {
+    const path = $(p).stringByExpandingTildeInPath.js
+    if (!fm.fileExistsAtPath(path)) { out.push('✗ not found: ' + p); continue }
+    const ok = $.NSWorkspace.sharedWorkspace.setIconForFileOptions(icon, path, 0)
+    out.push((ok ? '✓ ' + (first === '--reset' ? 'reset' : first) : '✗ failed') + ' ' + p)
+  }
+  return out.join('\n')
+}
